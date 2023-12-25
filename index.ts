@@ -1,4 +1,5 @@
-import Maps from '/maps.js';
+// eslint-disable-next-line no-restricted-imports
+import Maps from './maps.js';
 
 //API
 const APP_API_URL = 'https://restcountries.com/v3.1';
@@ -7,6 +8,7 @@ const APP_API_URL = 'https://restcountries.com/v3.1';
 type ICountry = {
     area: number;
     cca3: string;
+    borders: string[];
     name: {
         common: string;
         official: string;
@@ -107,7 +109,7 @@ async function loadCountriesData(): Promise<LoadCountriesResult> {
     try {
         // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя all на allolo,
         // получаем кастомную ошибку.
-        countries = await getData(APP_API_URL + '/all?fields=name&fields=cca3&fields=area');
+        countries = await getData(APP_API_URL + '/all?fields=name&fields=cca3&fields=area&fields=borders');
     } catch (error) {
         // console.log('catch for getData');
         // console.error(error);
@@ -120,24 +122,26 @@ async function loadCountriesData(): Promise<LoadCountriesResult> {
 }
 
 //Получение границ для одной страны
-async function loadCountryBorders(code: string): Promise<string[]> {
-    let borders;
+async function loadCountryBorders(code: string, countriesData: LoadCountriesResult): Promise<string[]> {
+    const country = countriesData[code];
 
-    try {
-        // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя alpha на allolo,
-        // получаем кастомную ошибку.
-        borders = await getData(`${APP_API_URL}/alpha/${code}?fields=borders`);
-    } catch (error) {
-        // console.log('catch for getData');
-        // console.error(error);
-        throw error;
+    if (country) {
+        return Promise.resolve(country.borders);
     }
 
-    return borders.borders;
+    return Promise.reject({
+        status: '',
+        customError: 'No such country',
+    });
 }
 
 //Получение маршрутов
-async function getRoutesInfo(codeFrom: string, codeTarget: string, maxSteps: number = 11) {
+async function getRoutesInfo(
+    codeFrom: string,
+    codeTarget: string,
+    countriesData: LoadCountriesResult,
+    maxSteps: number = 11
+) {
     type Route = string[];
     type RoutesResultType = {
         routes: Route[];
@@ -165,7 +169,7 @@ async function getRoutesInfo(codeFrom: string, codeTarget: string, maxSteps: num
         if (currentCode && bordersCache[currentCode] === undefined) {
             try {
                 /* eslint-disable no-await-in-loop */
-                bordersCache[currentCode] = await loadCountryBorders(currentCode);
+                bordersCache[currentCode] = await loadCountryBorders(currentCode, countriesData);
                 routesResult.requestsCnt += 1;
             } catch (error) {
                 throw new Error(error.customError);
@@ -298,7 +302,7 @@ const output = document.getElementById('output') as HTMLElement | null;
         // TODO: Рассчитать маршрут из одной страны в другую за минимум запросов.
         let routesData;
         try {
-            routesData = await getRoutesInfo(codeFrom, codeTo);
+            routesData = await getRoutesInfo(codeFrom, codeTo, countriesData);
         } catch (error) {
             showError(output, 'Something went wrong. Try to reload your page.', true);
             return;

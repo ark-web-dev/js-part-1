@@ -1,5 +1,6 @@
-import Maps from '/maps.js';
-//API
+// eslint-disable-next-line no-restricted-imports
+import Maps from './maps.js';
+// API
 const APP_API_URL = 'https://restcountries.com/v3.1';
 // Загрузка данных через await
 async function getDataAsync(url) {
@@ -44,32 +45,34 @@ function getDataPromise(url) {
             'Content-Type': 'application/json',
         },
         redirect: 'follow',
-    }).then((response) => {
-        // Если мы тут, значит, запрос выполнился.
-        // Но там может быть 404, 500, и т.д., поэтому проверяем ответ.
-        if (response.ok) {
-            return response.json();
+    }).then(
+        (response) => {
+            // Если мы тут, значит, запрос выполнился.
+            // Но там может быть 404, 500, и т.д., поэтому проверяем ответ.
+            if (response.ok) {
+                return response.json();
+            }
+            // Пример кастомной ошибки (если нужно проставить какие-то поля
+            // для внешнего кода). Можно зареджектить и сам `response`, смотря
+            // какой у вас контракт. Главное перевести код в ветку `catch`.
+            return Promise.reject({
+                status: response.status,
+                customError: 'wtfPromise',
+            });
+        },
+        // При сетевой ошибке (мы оффлайн) из fetch вылетит эксцепшн,
+        // и мы попадём в `onRejected` или в `.catch()` на промисе.
+        // Если не добавить `onRejected` или `catch`, при ошибке будет
+        // эксцепшн `Uncaught (in promise)`.
+        (error) => {
+            // Если не вернуть `Promise.reject()`, для внешнего кода
+            // промис будет зарезолвлен с `undefined`, и мы не попадём
+            // в ветку `catch` для обработки ошибок, а скорее всего
+            // получим другой эксцепшн, потому что у нас `undefined`
+            // вместо данных, с которыми мы работаем.
+            return Promise.reject(error);
         }
-        // Пример кастомной ошибки (если нужно проставить какие-то поля
-        // для внешнего кода). Можно зареджектить и сам `response`, смотря
-        // какой у вас контракт. Главное перевести код в ветку `catch`.
-        return Promise.reject({
-            status: response.status,
-            customError: 'wtfPromise',
-        });
-    }, 
-    // При сетевой ошибке (мы оффлайн) из fetch вылетит эксцепшн,
-    // и мы попадём в `onRejected` или в `.catch()` на промисе.
-    // Если не добавить `onRejected` или `catch`, при ошибке будет
-    // эксцепшн `Uncaught (in promise)`.
-    (error) => {
-        // Если не вернуть `Promise.reject()`, для внешнего кода
-        // промис будет зарезолвлен с `undefined`, и мы не попадём
-        // в ветку `catch` для обработки ошибок, а скорее всего
-        // получим другой эксцепшн, потому что у нас `undefined`
-        // вместо данных, с которыми мы работаем.
-        return Promise.reject(error);
-    });
+    );
 }
 // Две функции просто для примера, выберите с await или promise, какая нравится
 const getData = getDataAsync || getDataPromise;
@@ -78,9 +81,8 @@ async function loadCountriesData() {
     try {
         // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя all на allolo,
         // получаем кастомную ошибку.
-        countries = await getData(APP_API_URL + '/all?fields=name&fields=cca3&fields=area');
-    }
-    catch (error) {
+        countries = await getData(`${APP_API_URL}/all?fields=name&fields=cca3&fields=area&fields=borders`);
+    } catch (error) {
         // console.log('catch for getData');
         // console.error(error);
         throw error;
@@ -90,23 +92,19 @@ async function loadCountriesData() {
         return result;
     }, {});
 }
-//Получение границ для одной страны
-async function loadCountryBorders(code) {
-    let borders;
-    try {
-        // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя alpha на allolo,
-        // получаем кастомную ошибку.
-        borders = await getData(`${APP_API_URL}/alpha/${code}?fields=borders`);
+// Получение границ для одной страны
+async function loadCountryBorders(code, countriesData) {
+    const country = countriesData[code];
+    if (country) {
+        return Promise.resolve(country.borders);
     }
-    catch (error) {
-        // console.log('catch for getData');
-        // console.error(error);
-        throw error;
-    }
-    return borders.borders;
+    return Promise.reject({
+        status: '',
+        customError: 'No such country',
+    });
 }
-//Получение маршрутов
-async function getRoutesInfo(codeFrom, codeTarget, maxSteps = 11) {
+// Получение маршрутов
+async function getRoutesInfo(codeFrom, codeTarget, countriesData, maxSteps = 11) {
     const routesQueue = [[codeFrom]];
     const routesMinLengthCache = {};
     const bordersCache = {};
@@ -115,35 +113,36 @@ async function getRoutesInfo(codeFrom, codeTarget, maxSteps = 11) {
         requestsCnt: 0,
     };
     Maps.setEndPoints(codeFrom, codeTarget);
-    //Поиск маршрутов (BFS)
+    // Поиск маршрутов (BFS)
     while (routesQueue.length) {
         const currentRoute = routesQueue.shift() || [];
         const currentCode = currentRoute[currentRoute.length - 1] || '';
         Maps.markAsVisited([currentCode]);
-        //Если нет в bordersCache, загружаем границы текущей страны
+        // Если нет в bordersCache, загружаем границы текущей страны
         if (currentCode && bordersCache[currentCode] === undefined) {
             try {
                 /* eslint-disable no-await-in-loop */
-                bordersCache[currentCode] = await loadCountryBorders(currentCode);
+                bordersCache[currentCode] = await loadCountryBorders(currentCode, countriesData);
                 routesResult.requestsCnt += 1;
-            }
-            catch (error) {
+            } catch (error) {
                 throw new Error(error.customError);
             }
         }
-        //Получаем границы из кэша и обрабатываем их
+        // Получаем границы из кэша и обрабатываем их
         const borders = bordersCache[currentCode] || [];
         for (const borderCode of borders) {
             const newRoute = currentRoute.concat(borderCode);
             const borderMinRouteLength = routesMinLengthCache[borderCode];
-            //Если таргет, кладем в результат
+            // Если таргет, кладем в результат
             if (borderCode === codeTarget) {
                 routesResult.routes.push(newRoute);
                 maxSteps = newRoute.length;
             }
-            //Обновляем минимальную длину маршрута до текущего бордера и кладем маршрут в очередь
-            if (newRoute.length < maxSteps &&
-                (borderMinRouteLength === undefined || borderMinRouteLength >= newRoute.length)) {
+            // Обновляем минимальную длину маршрута до текущего бордера и кладем маршрут в очередь
+            if (
+                newRoute.length < maxSteps &&
+                (borderMinRouteLength === undefined || borderMinRouteLength >= newRoute.length)
+            ) {
                 routesMinLengthCache[borderCode] = newRoute.length;
                 routesQueue.push(newRoute);
             }
@@ -151,24 +150,25 @@ async function getRoutesInfo(codeFrom, codeTarget, maxSteps = 11) {
     }
     return routesResult;
 }
-//Получение кода cca3 по имени страны
+// Получение кода cca3 по имени страны
 const getCountryCodeByName = (name, countriesData) => {
     return Object.keys(countriesData).find((key) => countriesData[key]?.name.common === name);
 };
-//Вывод ошибки на страницу
+// Вывод ошибки на страницу
 const showError = (outputElement, errorText, isSingleError = false) => {
-    if (isSingleError)
+    if (isSingleError) {
         outputElement.innerHTML = '';
+    }
     const element = document.createElement('div');
     element.style.color = '#f00';
     element.textContent = errorText;
     outputElement.appendChild(element);
 };
-//Переводым элементы в disbled состояние
+// Переводым элементы в disbled состояние
 const disableElements = (...elements) => {
     elements.forEach((el) => (el.disabled = true));
 };
-//Переводым элементы в enabled состояние
+// Переводым элементы в enabled состояние
 const enableElements = (...elements) => {
     elements.forEach((el) => (el.disabled = false));
 };
@@ -189,8 +189,7 @@ const output = document.getElementById('output');
         // ПРОВЕРКА ОШИБКИ №2: Ставим тут брейкпоинт и, когда дойдёт
         // до него, переходим в оффлайн-режим. Получаем эксцепшн из `fetch`.
         countriesData = await loadCountriesData();
-    }
-    catch (error) {
+    } catch (error) {
         // console.log('catch for loadCountriesData');
         // console.error(error);
         output.textContent = 'Something went wrong. Try to reload your page.';
@@ -201,32 +200,38 @@ const output = document.getElementById('output');
     Object.keys(countriesData)
         .sort((a, b) => (countriesData[b]?.area || 0) - (countriesData[a]?.area || 0))
         .forEach((code) => {
-        const option = document.createElement('option');
-        option.value = countriesData[code]?.name.common || '';
-        countriesList.appendChild(option);
-    });
+            const option = document.createElement('option');
+            option.value = countriesData[code]?.name.common || '';
+            countriesList.appendChild(option);
+        });
     enableElements(fromCountry, toCountry, submit);
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         output.innerHTML = '';
-        //Если поля не заполнены
-        if (!fromCountry.value)
+        // Если поля не заполнены
+        if (!fromCountry.value) {
             showError(output, '"From" field cannot be empty!');
-        if (!toCountry.value)
+        }
+        if (!toCountry.value) {
             showError(output, '"To" field cannot be empty!');
-        if (!fromCountry.value || !toCountry.value)
+        }
+        if (!fromCountry.value || !toCountry.value) {
             return;
-        //Получаем коды cca3, по именам стран
+        }
+        // Получаем коды cca3, по именам стран
         const codeFrom = getCountryCodeByName(fromCountry.value, countriesData);
         const codeTo = getCountryCodeByName(toCountry.value, countriesData);
-        //Если страна не существует, или введено не корректное значение
-        if (!codeFrom)
+        // Если страна не существует, или введено не корректное значение
+        if (!codeFrom) {
             showError(output, 'Country "From" does not exist, or the entered value is incorrect!');
-        if (!codeTo)
+        }
+        if (!codeTo) {
             showError(output, 'Country "To" does not exist, or the entered value is incorrect!');
-        if (!codeFrom || !codeTo)
+        }
+        if (!codeFrom || !codeTo) {
             return;
-        //Если введены одинаковые страны
+        }
+        // Если введены одинаковые страны
         if (codeFrom === codeTo) {
             showError(output, 'The values of the "From" and "To" fields must be different!');
             return;
@@ -237,9 +242,8 @@ const output = document.getElementById('output');
         // TODO: Рассчитать маршрут из одной страны в другую за минимум запросов.
         let routesData;
         try {
-            routesData = await getRoutesInfo(codeFrom, codeTo);
-        }
-        catch (error) {
+            routesData = await getRoutesInfo(codeFrom, codeTo, countriesData);
+        } catch (error) {
             showError(output, 'Something went wrong. Try to reload your page.', true);
             return;
         }
@@ -250,10 +254,9 @@ const output = document.getElementById('output');
                 .map((route) => route.map((item) => countriesData[item]?.name.common).join(' → '))
                 .join('<br/>');
             output.innerHTML = `<b>Your results: </b><p style="color: green;">${routesHtml}</p><b>Number of requests: </b>${routesData.requestsCnt}`;
-        }
-        else {
+        } else {
             showError(output, 'The route is too long or missing! Please choose another destination.', true);
         }
     });
 })();
-//# sourceMappingURL=index.js.map
+// # sourceMappingURL=index.js.map
