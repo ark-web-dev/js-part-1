@@ -1,3 +1,8 @@
+import Maps from '/maps.js';
+
+//API
+const APP_API_URL = 'https://restcountries.com/v3.1';
+
 //Types
 type ICountry = {
     area: number;
@@ -102,7 +107,7 @@ async function loadCountriesData(): Promise<LoadCountriesResult> {
     try {
         // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя all на allolo,
         // получаем кастомную ошибку.
-        countries = await getData('https://restcountries.com/v3.1/all?fields=name&fields=cca3&fields=area');
+        countries = await getData(APP_API_URL + '/all?fields=name&fields=cca3&fields=area');
     } catch (error) {
         // console.log('catch for getData');
         // console.error(error);
@@ -113,6 +118,113 @@ async function loadCountriesData(): Promise<LoadCountriesResult> {
         return result;
     }, {});
 }
+
+//Получение границ для одной страны
+async function loadCountryBorders(code: string): Promise<string[]> {
+    let borders;
+
+    try {
+        // ПРОВЕРКА ОШИБКИ №1: ломаем этот урл, заменяя alpha на allolo,
+        // получаем кастомную ошибку.
+        borders = await getData(`${APP_API_URL}/alpha/${code}?fields=borders`);
+    } catch (error) {
+        // console.log('catch for getData');
+        // console.error(error);
+        throw error;
+    }
+
+    return borders.borders;
+}
+
+//Получение маршрутов
+async function getRoutesInfo(codeFrom: string, codeTarget: string, maxSteps: number = 11) {
+    type Route = string[];
+    type RoutesResultType = {
+        routes: Route[];
+        requestsCnt: 0;
+    };
+
+    const routesQueue: Route[] = [[codeFrom]];
+    const routesMinLengthCache: { [key: string]: number } = {};
+    const bordersCache: { [key: string]: string[] } = {};
+    const routesResult: RoutesResultType = {
+        routes: [],
+        requestsCnt: 0,
+    };
+
+    Maps.setEndPoints(codeFrom, codeTarget);
+
+    //Поиск маршрутов (BFS)
+    while (routesQueue.length) {
+        const currentRoute = routesQueue.shift() || [];
+        const currentCode = currentRoute[currentRoute.length - 1] || '';
+
+        Maps.markAsVisited([currentCode]);
+
+        //Если нет в bordersCache, загружаем границы текущей страны
+        if (currentCode && bordersCache[currentCode] === undefined) {
+            try {
+                /* eslint-disable no-await-in-loop */
+                bordersCache[currentCode] = await loadCountryBorders(currentCode);
+                routesResult.requestsCnt += 1;
+            } catch (error) {
+                throw new Error(error.customError);
+            }
+        }
+
+        //Получаем границы из кэша и обрабатываем их
+        const borders = bordersCache[currentCode] || [];
+
+        for (const borderCode of borders) {
+            const newRoute = currentRoute.concat(borderCode);
+            const borderMinRouteLength = routesMinLengthCache[borderCode];
+
+            //Если таргет, кладем в результат
+            if (borderCode === codeTarget) {
+                routesResult.routes.push(newRoute);
+                maxSteps = newRoute.length;
+            }
+
+            //Обновляем минимальную длину маршрута до текущего бордера и кладем маршрут в очередь
+            if (
+                newRoute.length < maxSteps &&
+                (borderMinRouteLength === undefined || borderMinRouteLength >= newRoute.length)
+            ) {
+                routesMinLengthCache[borderCode] = newRoute.length;
+                routesQueue.push(newRoute);
+            }
+        }
+    }
+
+    return routesResult;
+}
+
+//Получение кода cca3 по имени страны
+const getCountryCodeByName = (name: string, countriesData: LoadCountriesResult) => {
+    return Object.keys(countriesData).find((key) => countriesData[key]?.name.common === name);
+};
+
+//Вывод ошибки на страницу
+const showError = (outputElement: HTMLElement, errorText: string, isSingleError: boolean = false) => {
+    if (isSingleError) outputElement.innerHTML = '';
+
+    const element = document.createElement('div');
+
+    element.style.color = '#f00';
+    element.textContent = errorText;
+
+    outputElement.appendChild(element);
+};
+
+//Переводым элементы в disbled состояние
+const disableElements = (...elements: Array<HTMLInputElement | HTMLButtonElement>) => {
+    elements.forEach((el) => (el.disabled = true));
+};
+
+//Переводым элементы в enabled состояние
+const enableElements = (...elements: Array<HTMLInputElement | HTMLButtonElement>) => {
+    elements.forEach((el) => (el.disabled = false));
+};
 
 const form = document.getElementById('form');
 const fromCountry = document.getElementById('fromCountry') as HTMLInputElement | null;
@@ -126,9 +238,7 @@ const output = document.getElementById('output') as HTMLElement | null;
         throw new Error('Required element is missing from the page');
     }
 
-    fromCountry.disabled = true;
-    toCountry.disabled = true;
-    submit.disabled = true;
+    disableElements(fromCountry, toCountry, submit);
 
     output.textContent = 'Loading…';
     let countriesData: LoadCountriesResult = {};
@@ -139,7 +249,7 @@ const output = document.getElementById('output') as HTMLElement | null;
     } catch (error) {
         // console.log('catch for loadCountriesData');
         // console.error(error);
-        output.textContent = 'Something went wrong. Try to reset your compluter.';
+        output.textContent = 'Something went wrong. Try to reload your page.';
         return;
     }
     output.textContent = '';
@@ -153,14 +263,58 @@ const output = document.getElementById('output') as HTMLElement | null;
             countriesList.appendChild(option);
         });
 
-    fromCountry.disabled = false;
-    toCountry.disabled = false;
-    submit.disabled = false;
+    enableElements(fromCountry, toCountry, submit);
 
-    form.addEventListener('submit', (event) => {
+    form.addEventListener('submit', async (event) => {
         event.preventDefault();
+
+        output.innerHTML = '';
+
+        //Если поля не заполнены
+        if (!fromCountry.value) showError(output, '"From" field cannot be empty!');
+        if (!toCountry.value) showError(output, '"To" field cannot be empty!');
+        if (!fromCountry.value || !toCountry.value) return;
+
+        //Получаем коды cca3, по именам стран
+        const codeFrom = getCountryCodeByName(fromCountry.value, countriesData);
+        const codeTo = getCountryCodeByName(toCountry.value, countriesData);
+
+        //Если страна не существует, или введено не корректное значение
+        if (!codeFrom) showError(output, 'Country "From" does not exist, or the entered value is incorrect!');
+        if (!codeTo) showError(output, 'Country "To" does not exist, or the entered value is incorrect!');
+        if (!codeFrom || !codeTo) return;
+
+        //Если введены одинаковые страны
+        if (codeFrom === codeTo) {
+            showError(output, 'The values of the "From" and "To" fields must be different!');
+            return;
+        }
+
         // TODO: Вывести, откуда и куда едем, и что идёт расчёт.
+        output.innerHTML = `The route from <b>${fromCountry.value}</b> to <b>${toCountry.value}</b> is being calculated....`;
+
+        disableElements(fromCountry, toCountry, submit);
+
         // TODO: Рассчитать маршрут из одной страны в другую за минимум запросов.
+        let routesData;
+        try {
+            routesData = await getRoutesInfo(codeFrom, codeTo);
+        } catch (error) {
+            showError(output, 'Something went wrong. Try to reload your page.', true);
+            return;
+        }
+
+        enableElements(fromCountry, toCountry, submit);
+
         // TODO: Вывести маршрут и общее количество запросов.
+        if (routesData?.routes.length) {
+            const routesHtml = routesData?.routes
+                .map((route) => route.map((item) => countriesData[item]?.name.common).join(' → '))
+                .join('<br/>');
+
+            output.innerHTML = `<b>Your results: </b><p style="color: green;">${routesHtml}</p><b>Number of requests: </b>${routesData.requestsCnt}`;
+        } else {
+            showError(output, 'The route is too long or missing! Please choose another destination.', true);
+        }
     });
 })();
