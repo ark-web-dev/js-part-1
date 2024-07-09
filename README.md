@@ -1,131 +1,59 @@
-# Домашнее задание по JS, вторая лекция
+# Land Route Calculator
 
-## Кому и когда сдавать
+This project calculates the land route from one country to another using the [Rest Countries API](https://restcountries.com/#api-endpoints-v3), making the minimum number of requests. The code operates asynchronously and retrieves data about each country via the country code (cca3).
 
-Горский Илья, фронтенд-разработчик в команде Talantix.
+Check the [Live Demo](https://ark-web-dev.github.io/route-calculator/)
 
-Домашки принимаются до 20-декабря января включительно в Mattermost в личке.
+![project-image](project-image.png)
 
-Если что-то непонятно или не получается сделать — приходите в Mattermost.
+## Stack
 
-## Задание
+![TypeScript](https://img.shields.io/badge/typescript-%23007ACC.svg?style=for-the-badge&logo=typescript&logoColor=white)
+![JavaScript](https://img.shields.io/badge/javascript-%23F7DF1E.svg?style=for-the-badge&logo=javascript&logoColor=black)
+![CSS3](https://img.shields.io/badge/css3-%231572B6.svg?style=for-the-badge&logo=css3&logoColor=white)
+![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=for-the-badge&logo=html5&logoColor=white)
 
-Расчитать сухопутный маршрут из одной страны в другую с помощью [Rest Countries API](https://restcountries.com/#api-endpoints-v3),
-сделав минимум запросов. Код должен работать _асинхронно_ через API получения _отдельной страны_.
+## Description
 
-В API можно получить все данные о стране по коду `cca3` (что бы это ни было) так: https://restcountries.com/v3.1/alpha/{cca3}
+The Land Route Calculator determines the shortest path between two countries by traversing through their neighboring countries. Utilizing the Rest Countries API, it fetches and processes only the necessary data fields to optimize the number of API requests.
 
-В поле `borders` лежат коды соседних стран. Нужно вывести в `output` (см. index.html) список стран, по которым нужно проехать,
-чтобы попасть из `fromCountry` в `toCountry` (используя `borders`), и количество сделанных запросов.
+## Features
 
-Чтобы ответ ограничился определёнными полями, добавьте параметр `fields`. Например:
-https://restcountries.com/v3.1/alpha/AUT?fields=name&fields=borders&fields=area
-```json
-{
-    "name": {
-        "common": "Austria",
-        "official": "Republic of Austria",
-        "nativeName": {
-            "bar": {
-                "official": "Republik Österreich",
-                "common": "Österreich"
-            }
-        }
-    },
-    "capital": [
-        "Vienna"
-    ],
-    "altSpellings": [
-        "AT",
-        "Osterreich",
-        "Oesterreich"
-    ],
-    "borders": [
-        "CZE",
-        "DEU",
-        "HUN",
-        "ITA",
-        "LIE",
-        "SVK",
-        "SVN",
-        "CHE"
-    ],
-    "area": 83871.0
-}
-```
+-   Asynchronous API requests
+-   Display the route between two countries
+-   Handle errors and edge cases such as invalid country codes or unreachable countries
+-   Limit the route search to 10 steps to avoid excessive requests
 
-Захотите что-то поменять или улучшить, раскрасить, сделать поинтереснее, вывести дополнительную
-информацию — всё на ваш вкус. Но желательно не переписывать всё полностью и делать это отдельными коммитами.
-И сначала сделать основную задачу.
+## How to Use
 
-### Пример
+1. Enter the source country and destination country.
+2. The output will display the countries to pass through to reach the destination, along with the number of requests made.
 
-Вводим Австрию и Болгарию, результат:
+## Example
+
+Input: Austria and Bulgaria  
+Output:
+
 ```
 Austria → Hungary → Serbia → Bulgaria
 Austria → Hungary → Romania → Bulgaria
 
-Понадобилось всего 100500 запросов!
+Number of requests: X
 ```
 
-### Корнер-кейсы
+## Error Handling
 
-API в некоторых случаях может вернуть ошибку, нужно уметь это обрабатывать, показать ошибку:
-* https://restcountries.com/v3.1/alpha/
-* https://restcountries.com/v3.1/alpha/bubu
+-   Invalid country code: Displays an error message when the API returns an error for an invalid country code.
+-   Unreachable countries: Handles cases where there is no land route between the countries or the route exceeds 10 steps.
 
-Между странами может не быть маршрута (на островах), или маршрут слишком длинный (ограничимся 10 шагами).
+## Future Enhancements
 
-### Советы
+-   Improve UI with additional design elements.
+-   Add more detailed information about each country on the route.
+-   Optimize the algorithm for better performance.
 
-Изолируйте походы на бэк от кода приложения, пусть это будет чёрный ящик.
+## Contributing
 
-Не ходите дважды за одной и той же страной.
+Feel free to fork this repository and submit pull requests. For major changes, please open an issue first to discuss what you would like to change.
 
-Сделайте метод для получения нескольких стран сразу. Под капотом можно
-брать уже загруженные и ходить за недостающими.
-
-Обратите внимание на доступность контролов, на время запросов можно дизейблить кнопку и инпуты,
-показывать индикатор загрузки.
-
-Если хотите подключить визуализацию обработки стран (не обязательно):
-* Cделайте `index.js` модулем (добавьте `type="module"` в `<script src="..."`).
-* Подключите внутри `maps.js`: `import Maps from '/maps.js';`.
-* В начале расчёта вызовите `Maps.setEndPoints('AUT', 'BGR');`.
-* При загрузке страны или пачки стран вызовите `Maps.markAsVisited(['CZE', 'DEU', …]);`
-
-Под блоком `#output` должна появиться карта, на которой закрашиваются зелёным посещённые страны.
-
-Чтобы карта не заполнялась слишком быстро, отключите кэш в панели Network в DevTools или поставьте там `throttling: 3G`.
-
-### По шагам
-
-1) Сделайте _форк_ репозитория [https://github.com/ipetropolsky/js-part-1](https://github.com/IlyaGorsky/js-part-1/)
-2) Склонируйте его к себе на машину, создайте ветку от master.
-3) Запустите `npm install` или `yarn`, чтобы установить зависимости.
-4) Запустите `npm run http-server` или `yarn http-server`, в консоли будет адрес, куда заходить.
-5) Зайдите [на этот адрес](http://127.0.0.1:8080) в браузере, увидите html-ку с двумя инпутами и кнопкой.
-6) Допишите недостающий код, обработайте разные ситуации. Всё максимально просто.
-7) Сделайте пулл-реквест *в своём репозитории* и скиньте мне линк на него (ревьювером ставить не обязательно).
-8) В пулл-реквесте добавьте несколько картинок, как ведёт себя ваше приложение в разных кейсах.
-9) Если по ревью требуются изменения, сделайте их в том же PR отдельными коммитами, и пинганите меня снова.
-
-### Если вы пропустили это в первой домашке
-
-* Установите [NodeJs](https://nodejs.org/en/download/), если его нет.
-* Установите [yarn](https://classic.yarnpkg.com/lang/en/docs/install/), если его нет (не обязательно, можно пользоваться `npm`).
-* Включите в своём редакторе ESLint и реформат при сохранении, отключите JSHint и другие линтеры.
-
-Некоторые правила `eslint`, которые мы обычно используем, отключены для удобства разработки.
-Например, [`no-unused-vars`](https://eslint.org/docs/latest/rules/no-unused-vars), [`no-console`](https://eslint.org/docs/latest/rules/no-console), [`no-new-wrappers`](https://eslint.org/docs/latest/rules/no-new-wrappers).
-
-### См. также:
-* [Install Node.js on Windows Subsystem for Linux (WSL2)](https://learn.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-wsl)
-
-### Бонусный уровень (необязательный)
-
-В реальной жизни мы, конечно, не будем делать столько запросов. Давайте загрузим все страны с границами
-за один раз и сделаем собственное _асинхронное_ API, которое будет доставать страну по её коду.
-Например: `await getCountry(code)` или `getCountry(code).then(...)`.
-
-Если походы на бэк у вас в чёрном ящике, то для приложения ничего не должно поменяться.
+This project aims to provide a practical demonstration of working with APIs in a TypeScript environment while solving an interesting routing problem. Feel free to explore, modify, and enhance the code as per your requirements.
